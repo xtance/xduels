@@ -2,6 +2,9 @@
 #include <cstrike>
 #include <sdktools>
 
+#pragma semicolon 1
+#pragma newdecls required
+
 // НАСТРОЙКИ ПЛАГИНА :
 
 #define MAX_DUELS 3
@@ -27,6 +30,7 @@ public void OnPluginStart()
 	
 	//Команды
 	RegConsoleCmd("sm_duel", XDuel, "Пригласить на дуэль");
+	RegConsoleCmd("sm_d", XDuel, "Пригласить на дуэль");
 	RegAdminCmd("sm_dt", XDuelTest, ADMFLAG_ROOT, "Телепорт на место дуэли (спавн 1)");
 	RegAdminCmd("sm_dspawn", XDuelSpawn, ADMFLAG_ROOT, "Настроить спавны. Конфиг будет в /addons/sourcemod/configs/skyboxduels.txt");
 	HookEvent("round_start", RoundStart, EventHookMode_Post);
@@ -39,11 +43,15 @@ public void OnPluginStart()
 	AddCommandListener(XNoVip,"sm_premium");
 	AddCommandListener(XNoVip,"sm_wp");
 	AddCommandListener(XNoVip,"sm_weaponmenu");
+	AddCommandListener(XNoVip,"sm_grenades");
+	AddCommandListener(XNoVip,"sm_pistols");
+	AddCommandListener(XNoVip,"sm_guns");
+	AddCommandListener(XNoVip,"sm_zeus");
 }
 
 public Action RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
-	for (new i = 1; i <= MaxClients; i++)
+	for (int i = 1; i <= MaxClients; i++)
 	{
 		if (IsClientInGame(i))
 		{
@@ -58,7 +66,7 @@ public void OnMapStart()
 {
 	GetCurrentMap(szMap, sizeof(szMap));
 	KeyValues kv = new KeyValues("skybox_duels_spawns");
-	char szPath[256]
+	char szPath[256];
 	BuildPath(Path_SM, szPath, sizeof(szPath), "configs/duels.ini");
 	if(kv.ImportFromFile(szPath))
 	{
@@ -139,11 +147,12 @@ public Action XDuel(int iClient, int iArgs)
 	int iTarget = iInvite[iClient];
 	if (!StartDuel(iClient, iTarget))
 	{
-		PrintToChat(iClient, " \x02>>\x01 Дуэль невозможна!");
-		PrintToChat(iClient, " \x02>>\x01 Напишите \x02!duel\x01, чтобы пригласить игрока.");
+		PrintToChat(iClient, " \x02>>\x01 Не получилось создать дуэль!");
+		PrintToChat(iClient, " \x02>>\x01 Напишите \x02!d\x01, чтобы пригласить игрока.");
 	}
 	return Plugin_Handled;
 }
+
 
 
 public int hduel(Menu mduel, MenuAction action, int param1, int param2)
@@ -160,9 +169,9 @@ public int hduel(Menu mduel, MenuAction action, int param1, int param2)
 			if (!StartDuel(param1, iSomeone))
 			{
 				PrintToChat(param1," \x04>>\x01 Вы пригласили \x04%N\x01 на дуэль!",iSomeone);
-				PrintToChat(param1," \x04>>\x01 Он должен написать \x04!duel %i\x01, чтобы согласиться.",param1);
+				PrintToChat(param1," \x04>>\x01 Он должен написать \x04!d %i\x01, чтобы согласиться.",param1);
 				PrintToChat(iSomeone," \x04>>\x01 %N приглашает вас \x04на дуэль!",param1);
-				PrintToChat(iSomeone," \x04>>\x01 Напишите \x04!duel %i\x01, чтобы согласиться.",param1);
+				PrintToChat(iSomeone," \x04>>\x01 Напишите \x04!d %i\x01, чтобы согласиться.",param1);
 			}
 		}
 	}
@@ -210,7 +219,7 @@ public int hspawn(Menu mspawn, MenuAction action, int param1, int param2)
 		case MenuAction_Select:
 		{
 			KeyValues kv = new KeyValues("skybox_duels_spawns");
-			char szPath[256]
+			char szPath[256];
 			BuildPath(Path_SM, szPath, sizeof(szPath), "configs/duels.ini");
 			if(kv.ImportFromFile(szPath))
 			{
@@ -265,7 +274,8 @@ public void OnClientPostAdminCheck(int iClient)
 
 void RemoveWeapon(int iClient)
 {
-	for(int i = 0, iEntity; i < 5; i++)
+	//Удаляем всё остальное
+	for(int i = 0, iEntity; i < 4; i++)
 	{
 		while((iEntity = GetPlayerWeaponSlot(iClient, i)) != -1)
 		{
@@ -276,34 +286,29 @@ void RemoveWeapon(int iClient)
 	GivePlayerItem(iClient, "weapon_knife");
 }
 
-bool StartDuel(iClient, iTarget)
+bool StartDuel(int iClient, int iTarget)
 {
-	if ((1 < iClient <= MAXPLAYERS+1) && (1 < iTarget <= MAXPLAYERS+1))
+	if (IsClientInGame(iTarget) && IsClientInGame(iClient) && GetClientTeam(iTarget) > 1 && GetClientTeam(iTarget) > 1)
 	{
-		if (IsClientInGame(iTarget) && IsClientInGame(iClient) && GetClientTeam(iTarget) > 1 && GetClientTeam(iTarget) > 1)
+		if ((iClient == iInvite[iTarget]) && (iTarget == iInvite[iClient]) && (GetClientTeam(iClient) != GetClientTeam(iTarget)))
 		{
-			if ((iClient == iInvite[iTarget]) && (iTarget == iInvite[iClient]) && (GetClientTeam(iClient) != GetClientTeam(iTarget)))
-			{
-				PrintToChatAll(" \x09>>\x01 Дуэль началась!");
-				PrintToChatAll(" \x09>>\x01 %N \x09VS. \x01%N!",iClient, iTarget);
-				CS_RespawnPlayer(iTarget);
-				CS_RespawnPlayer(iClient);
-				TeleportEntity(iTarget, f1, NULL_VECTOR, NULL_VECTOR);
-				TeleportEntity(iClient, f2, NULL_VECTOR, NULL_VECTOR);
-				bDuel = true;
-				iDuels++;
-				
-				RemoveWeapon(iClient);
-				RemoveWeapon(iTarget);
-				bOnDuel[iClient] = true;
-				bOnDuel[iTarget] = true;
-				return true;
-			}
-			else return false;
+			PrintToChatAll(" \x09>>\x01 Дуэль началась!");
+			PrintToChatAll(" \x09>>\x01 %N \x09VS. \x01%N!",iClient, iTarget);
+			CS_RespawnPlayer(iTarget);
+			CS_RespawnPlayer(iClient);
+			TeleportEntity(iTarget, f1, NULL_VECTOR, NULL_VECTOR);
+			TeleportEntity(iClient, f2, NULL_VECTOR, NULL_VECTOR);
+			bDuel = true;
+			iDuels++;
+			
+			RemoveWeapon(iClient);
+			RemoveWeapon(iTarget);
+			bOnDuel[iClient] = true;
+			bOnDuel[iTarget] = true;
+			return true;
 		}
-		else return false;
 	}
-	else return false;
+	return false;
 }
 
 public Action HookPlayerDeath(Handle event, const char[] szName, bool dontBroadcast)
@@ -326,7 +331,7 @@ public Action HookPlayerDeath(Handle event, const char[] szName, bool dontBroadc
 	return Plugin_Continue;
 }
 
-public void XWin(i)
+public void XWin(int i)
 {
 	PrintToChatAll(" \x09>>\x01 %N выиграл дуэль.", i);
 	if (GIFT_MONEY)
@@ -338,7 +343,7 @@ public void XWin(i)
 	bOnDuel[i] = false;
 }
 
-public Action XNoVip(iClient, const char[] szCmd, argc)
+public Action XNoVip(int iClient, const char[] szCmd, int iArgc)
 {
 	if (bOnDuel[iClient])
 	{
@@ -348,7 +353,7 @@ public Action XNoVip(iClient, const char[] szCmd, argc)
 	return Plugin_Continue;
 }
 
-public void XBlock(i)
+public void XBlock(int i)
 {
 	Panel panel = new Panel();
 	panel.SetTitle("Данная команда недоступна на дуэли!\n");
@@ -367,7 +372,7 @@ public int PanelHandler1(Menu menu, MenuAction action, int param1, int param2)
 	}
 }
 
-void XGift(i, iMoney) {
+void XGift(int i, int iMoney) {
     int iStartMoney = GetEntProp(i, Prop_Send, "m_iAccount");
     iStartMoney += iMoney;
     if (iStartMoney > 16000) iStartMoney = 16000;
