@@ -1,6 +1,7 @@
 #include <sourcemod>
 #include <cstrike>
 #include <sdktools>
+#include <sdkhooks>
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -8,11 +9,11 @@
 // НАСТРОЙКИ ПЛАГИНА :
 
 #define MAX_DUELS 3
-#define GIFT_MONEY 1500
+#define GIFT_MONEY 0
 
 int iInvite[MAXPLAYERS+1], iDuels;
 bool bOnDuel[MAXPLAYERS+1], bDuel, bMapHasSpawns;
-float f1[3],f2[3],fEdit[3];
+float f1[3],f2[3],fEdit[3],fT[MAXPLAYERS+1][3];
 char szMap[70];
 
 public Plugin myinfo =
@@ -47,6 +48,11 @@ public void OnPluginStart()
 	AddCommandListener(XNoVip,"sm_pistols");
 	AddCommandListener(XNoVip,"sm_guns");
 	AddCommandListener(XNoVip,"sm_zeus");
+	
+	for (int i = 1; i<=MaxClients; i++)
+	{
+		OnClientPostAdminCheck(i);
+	}
 }
 
 public Action RoundStart(Event event, const char[] name, bool dontBroadcast)
@@ -269,6 +275,7 @@ public void OnClientPostAdminCheck(int iClient)
 	{
 		iInvite[iClient] = -1;
 		bOnDuel[iClient] = false;
+		SDKHook(iClient, SDKHook_OnTakeDamage, OnTakeDamage);
 	}
 }
 
@@ -296,8 +303,12 @@ bool StartDuel(int iClient, int iTarget)
 			PrintToChatAll(" \x09>>\x01 %N \x09VS. \x01%N!",iClient, iTarget);
 			CS_RespawnPlayer(iTarget);
 			CS_RespawnPlayer(iClient);
+			GetEntPropVector(iTarget, Prop_Send, "m_vecOrigin", fT[iTarget]);
+			GetEntPropVector(iClient, Prop_Send, "m_vecOrigin", fT[iClient]);
 			TeleportEntity(iTarget, f1, NULL_VECTOR, NULL_VECTOR);
 			TeleportEntity(iClient, f2, NULL_VECTOR, NULL_VECTOR);
+			SetEntityRenderColor(iClient, 255, 0, 0, 255);
+			SetEntityRenderColor(iTarget, 0, 255, 0, 255);
 			bDuel = true;
 			iDuels++;
 			
@@ -316,32 +327,36 @@ public Action HookPlayerDeath(Handle event, const char[] szName, bool dontBroadc
 	int iClient = GetClientOfUserId(GetEventInt(event, "userid"));
 	if (bOnDuel[iClient])
 	{
+		SetEntityRenderColor(iClient, 255, 255, 255, 255);
 		bOnDuel[iClient] = false;
 		for (int i = 1; i <= MaxClients; i++)
 		{
 			if (IsClientInGame(i) && IsPlayerAlive(i) && bOnDuel[i])
 			{
 				RequestFrame(XWin, i);
-				iInvite[i] = 0;
+				iInvite[i] = -1;
 			}
 		}
 		bDuel = false;
-		iInvite[iClient] = 0;
+		iInvite[iClient] = -1;
 	}
 	return Plugin_Continue;
 }
 
 public void XWin(int i)
 {
+	SetEntityRenderColor(i, 255, 255, 255, 255);
 	PrintToChatAll(" \x09>>\x01 %N выиграл дуэль.", i);
 	if (GIFT_MONEY)
 	{
 		PrintToChatAll(" \x09>>\x01 Он получил \x09$%i в награду!", GIFT_MONEY);
 		XGift(i, GIFT_MONEY);
 	}
-	CS_RespawnPlayer(i);
 	bOnDuel[i] = false;
+	CS_RespawnPlayer(i);
+	//TeleportEntity(i, fT[i], NULL_VECTOR, NULL_VECTOR);
 }
+
 
 public Action XNoVip(int iClient, const char[] szCmd, int iArgc)
 {
@@ -377,4 +392,13 @@ void XGift(int i, int iMoney) {
     iStartMoney += iMoney;
     if (iStartMoney > 16000) iStartMoney = 16000;
     SetEntProp(i, Prop_Send, "m_iAccount", iStartMoney);
+}
+
+public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom){
+	
+	if (bOnDuel[victim] != bOnDuel[attacker])
+	{
+		return Plugin_Handled;
+	}
+	return Plugin_Continue;
 }
