@@ -13,7 +13,7 @@
 
 int iInvite[MAXPLAYERS+1], iDuels;
 bool bOnDuel[MAXPLAYERS+1], bDuel, bMapHasSpawns;
-float f1[3],f2[3],fEdit[3],fT[MAXPLAYERS+1][3];
+float f1[3],f2[3],fEdit[3],fArena[3];
 char szMap[70];
 
 public Plugin myinfo =
@@ -57,10 +57,15 @@ public void OnPluginStart()
 
 public Action RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
+	if (fArena[0] != 0.0 && fArena[1] != 0.0 && fArena[2] != 0.0)
+	{
+		CreateArena(fArena);
+	}
 	for (int i = 1; i <= MaxClients; i++)
 	{
 		if (IsClientInGame(i))
 		{
+			SetEntityRenderColor(i, 255, 255, 255, 255);
 			bOnDuel[i] = false;
 		}
 	}
@@ -70,6 +75,9 @@ public Action RoundStart(Event event, const char[] name, bool dontBroadcast)
 
 public void OnMapStart()
 {
+	PrecacheModel("models/props/de_nuke/hr_nuke/nuke_bombsite_target/nuke_bombsite_trolley.mdl", true);
+	PrecacheModel("models/props/de_nuke/hr_nuke/chainlink_fence_001/chainlink_fence_001b_256.mdl", true);
+	bMapHasSpawns = false;
 	GetCurrentMap(szMap, sizeof(szMap));
 	KeyValues kv = new KeyValues("skybox_duels_spawns");
 	char szPath[256];
@@ -80,13 +88,24 @@ public void OnMapStart()
 		KvJumpToKey(kv, szMap, true);
 		KvGetVector(kv, "1", f1);
 		KvGetVector(kv, "2", f2);
+		KvGetVector(kv, "arenaPos", fArena);
+		if (fArena[0] != 0.0 && fArena[1] != 0.0 && fArena[2] != 0.0)
+		{
+			f1 = fArena;
+			f2 = fArena;
+			f1[2] = f1[2]+18.0;
+			f2[2] = f2[2]+18.0;
+			f2[0] = f2[0]+100.0;
+			f2[1] = f2[1]+100.0;
+			CreateArena(fArena);
+		}
 		PrintToServer("[Skybox Duels] Спавн 1 : %.1f | %.1f | %.1f", f1[0],f1[1],f1[2]);
 		PrintToServer("[Skybox Duels] Спавн 2 : %.1f | %.1f | %.1f", f2[0],f2[1],f2[2]);
-		bMapHasSpawns = true;
+		PrintToServer("[Skybox Duels] Арена : %.1f | %.1f | %.1f", fArena[0],fArena[1],fArena[2]);
 	}
-	if (f1[0] == 0.0 || f2[0] == 0.0)
+	if (f1[0] != 0.0 || f2[0] != 0.0)
 	{
-		bMapHasSpawns = false;
+		bMapHasSpawns = true;
 	}
 }
 
@@ -117,7 +136,7 @@ public Action XDuel(int iClient, int iArgs)
 	{
 		PrintToChat(iClient, " \x02>>\x01 На разминке \x02дуэль невозможна!");
 		return Plugin_Handled;
-	} 
+	}
 	if (GetClientTeam(iClient) < 2)
 	{
 		PrintToChat(iClient, " \x02>>\x01 Зайдите за \x02СТ или Т!");
@@ -193,7 +212,8 @@ public Action XDuelTest(int iClient, int iArgs)
 	}
 	CS_RespawnPlayer(iClient);
 	TeleportEntity(iClient, f1, NULL_VECTOR, NULL_VECTOR);
-	RemoveWeapon(iClient);
+	bOnDuel[iClient] = true;
+	//RemoveWeapon(iClient);
 	PrintToChat(iClient, " \x02>>\x01 Первый спавн : \x02%.1f | %.1f | %.1f", f1[0],f1[1],f1[2]);
 	PrintToChat(iClient, " \x02>>\x01 Второй спавн : \x02%.1f | %.1f | %.1f", f2[0],f2[1],f2[2]);
 	return Plugin_Handled;
@@ -206,14 +226,17 @@ public Action XDuelSpawn(int iClient, int iArgs)
 		PrintToServer("[Skybox Duels] Редактор не доступен консоли.");
 		return Plugin_Handled;
 	}
-	Handle mspawn = CreateMenu(hspawn, MenuAction_Cancel);
+	Menu mspawn = new Menu(hspawn, MenuAction_Cancel);
 	char szTitle[300];
 	GetEntPropVector(iClient, Prop_Send, "m_vecOrigin", fEdit);
-	Format(szTitle, sizeof(szTitle), "Карта : %s\nПозиция : %.1f | %.1f | %.1f\nКакой это спавн?",szMap,fEdit[0],fEdit[1],fEdit[2]);
-	SetMenuTitle(mspawn, szTitle);
-	AddMenuItem(mspawn, "item1", "Первый");
-	AddMenuItem(mspawn, "item2", "Второй");
-	DisplayMenu(mspawn, iClient, MENU_TIME_FOREVER);
+	Format(szTitle, sizeof(szTitle), "XDuels имеет два режима работы : \nЕсли выбрать арену, спавны сделаются сами.\nЕсли выбрать спавн, арена пропадёт!");
+	mspawn.SetTitle("%s",szTitle);
+	mspawn.AddItem("itemarena","Создать арену");
+	mspawn.AddItem("itemx"," ",ITEMDRAW_SPACER);
+	mspawn.AddItem("itemy"," ",ITEMDRAW_SPACER);
+	mspawn.AddItem("item1","Создать первый спавн");
+	mspawn.AddItem("item2","Создать второй спавн");
+	mspawn.Display(iClient, MENU_TIME_FOREVER);
 	
 	return Plugin_Handled;
 }
@@ -233,6 +256,7 @@ public int hspawn(Menu mspawn, MenuAction action, int param1, int param2)
 				KvJumpToKey(kv, szMap, true);
 				KvGetVector(kv, "1", f1);
 				KvGetVector(kv, "2", f2);
+				KvGetVector(kv, "arenaPos", fArena);
 			}
 			KvRewind(kv);
 			char item[16];
@@ -249,6 +273,8 @@ public int hspawn(Menu mspawn, MenuAction action, int param1, int param2)
 				PrintToChat(param1, " \x02>>\x01 Второй спавн : \x02%.1f | %.1f | %.1f", f2[0],f2[1],f2[2]);
 				f1 = fEdit;
 				bMapHasSpawns = true;
+				float f[3];
+				fArena = f;
 			}
 			else if (StrEqual(item, "item2"))
 			{
@@ -262,12 +288,100 @@ public int hspawn(Menu mspawn, MenuAction action, int param1, int param2)
 				PrintToChat(param1, " \x02>>\x01 Второй спавн : \x02%.1f | %.1f | %.1f", f2[0],f2[1],f2[2]);
 				f2 = fEdit;
 				bMapHasSpawns = true;
+				float f[3];
+				fArena = f;
+			}
+			else if (StrEqual(item, "itemarena"))
+			{
+				fArena = fEdit;
+				CreateArena(fArena);
+				KvJumpToKey(kv, szMap, true);
+				KvSetVector(kv, "arenaPos", fArena);
+				KvRewind(kv);
+				kv.ExportToFile(szPath);
+				f1 = fArena;
+				f2 = fArena;
+				f1[2] = f1[2]+18.0;
+				f2[2] = f2[2]+18.0;
+				f2[0] = f2[0]+100.0;
+				f2[1] = f2[1]+100.0;
+				bMapHasSpawns = true;
 			}
 		}
 	}
 	return 0;
 }
 
+void CreateArena(float fInitPos[3])
+{
+	int iEnt;
+	float fPos[3],fAng[3];
+	//GetEntPropVector(iClient, Prop_Send, "m_vecOrigin", fPos);
+	
+	fPos = fInitPos;
+	
+	fAng[0] = 0.0;
+	fAng[1] = 0.0;
+	fAng[2] = 0.0;
+	
+	iEnt = CreateWall(fPos, fAng);
+	fPos[0] = fPos[0]+125.0;
+	iEnt = CreateWall(fPos, fAng);
+	fPos[1] = fPos[1]+125.0;
+	iEnt = CreateWall(fPos, fAng);
+	fPos[0] = fPos[0]-125.0;
+	iEnt = CreateWall(fPos, fAng);
+	
+	fPos = fInitPos;
+	
+	fPos[2] = fPos[2] + 130.0;
+	iEnt = CreateWall(fPos, fAng);
+	fPos[0] = fPos[0]+125.0;
+	iEnt = CreateWall(fPos, fAng);
+	fPos[1] = fPos[1]+125.0;
+	iEnt = CreateWall(fPos, fAng);
+	fPos[0] = fPos[0]-125.0;
+	iEnt = CreateWall(fPos, fAng);
+	fPos[2] = fPos[2] - 120.0;
+	
+	fPos = fInitPos;
+	
+	fPos[0] = fPos[0]-65.0;
+	fPos[1] = fPos[1]-65.0;
+	iEnt = CreateFence(fPos, fAng);
+	fPos[0] = fPos[0]+250.0;
+	iEnt = CreateFence(fPos, fAng);
+	fAng[1] = 90.0;
+	iEnt = CreateFence(fPos, fAng);
+	fPos[1] = fPos[1]+250.0;
+	iEnt = CreateFence(fPos, fAng);
+}
+
+int CreateWall(float fPos[3], float fAng[3])
+{
+	int Entity = CreateEntityByName("prop_dynamic_override");
+	DispatchKeyValue(Entity, "model",  "models/props/de_nuke/hr_nuke/nuke_bombsite_target/nuke_bombsite_trolley.mdl");
+	DispatchKeyValue(Entity, "solid",   "6");//6
+	SetEntityModel(Entity, "models/props/de_nuke/hr_nuke/nuke_bombsite_target/nuke_bombsite_trolley.mdl");
+	DispatchSpawn(Entity);
+	AcceptEntityInput(Entity, "DisableShadow");
+	SetEntityRenderMode(Entity, RENDER_NORMAL);
+	TeleportEntity(Entity, fPos, fAng, NULL_VECTOR);
+	return Entity;
+}
+
+int CreateFence(float fPos[3], float fAng[3])
+{
+	int Entity = CreateEntityByName("prop_dynamic_override");
+	DispatchKeyValue(Entity, "model",  "models/props/de_nuke/hr_nuke/chainlink_fence_001/chainlink_fence_001b_256.mdl");
+	DispatchKeyValue(Entity, "solid",   "6");//6
+	SetEntityModel(Entity, "models/props/de_nuke/hr_nuke/chainlink_fence_001/chainlink_fence_001b_256.mdl");
+	DispatchSpawn(Entity);
+	AcceptEntityInput(Entity, "DisableShadow");
+	SetEntityRenderMode(Entity, RENDER_NORMAL);
+	TeleportEntity(Entity, fPos, fAng, NULL_VECTOR);
+	return Entity;
+}
 
 public void OnClientPostAdminCheck(int iClient) 
 {
@@ -278,24 +392,16 @@ public void OnClientPostAdminCheck(int iClient)
 		SDKHook(iClient, SDKHook_OnTakeDamage, OnTakeDamage);
 	}
 }
-
-void RemoveWeapon(int iClient)
+bool IsValidCl(int i)
 {
-	//Удаляем всё остальное
-	for(int i = 0, iEntity; i < 4; i++)
-	{
-		while((iEntity = GetPlayerWeaponSlot(iClient, i)) != -1)
-		{
-			RemovePlayerItem(iClient, iEntity);
-			AcceptEntityInput(iEntity, "Kill");
-		}
-	}
-	GivePlayerItem(iClient, "weapon_knife");
+	if (IsClientInGame(i) && (GetClientTeam(i) > 1) && (1<=i<=MAXPLAYERS) && !IsFakeClient(i))
+		return true;
+	else return false;
 }
 
 bool StartDuel(int iClient, int iTarget)
 {
-	if (IsClientInGame(iTarget) && IsClientInGame(iClient) && GetClientTeam(iTarget) > 1 && GetClientTeam(iTarget) > 1)
+	if (!bDuel && IsValidCl(iTarget) && IsValidCl(iClient))
 	{
 		if ((iClient == iInvite[iTarget]) && (iTarget == iInvite[iClient]) && (GetClientTeam(iClient) != GetClientTeam(iTarget)))
 		{
@@ -303,23 +409,23 @@ bool StartDuel(int iClient, int iTarget)
 			PrintToChatAll(" \x09>>\x01 %N \x09VS. \x01%N!",iClient, iTarget);
 			CS_RespawnPlayer(iTarget);
 			CS_RespawnPlayer(iClient);
-			GetEntPropVector(iTarget, Prop_Send, "m_vecOrigin", fT[iTarget]);
-			GetEntPropVector(iClient, Prop_Send, "m_vecOrigin", fT[iClient]);
 			TeleportEntity(iTarget, f1, NULL_VECTOR, NULL_VECTOR);
 			TeleportEntity(iClient, f2, NULL_VECTOR, NULL_VECTOR);
+			FakeClientCommand(iTarget, "use weapon_knife");
+			FakeClientCommand(iClient, "use weapon_knife");
 			SetEntityRenderColor(iClient, 255, 0, 0, 255);
 			SetEntityRenderColor(iTarget, 0, 255, 0, 255);
 			bDuel = true;
 			iDuels++;
-			
-			RemoveWeapon(iClient);
-			RemoveWeapon(iTarget);
 			bOnDuel[iClient] = true;
 			bOnDuel[iTarget] = true;
 			return true;
 		}
+		else
+			return false;
 	}
-	return false;
+	else
+		return false;
 }
 
 public Action HookPlayerDeath(Handle event, const char[] szName, bool dontBroadcast)
@@ -327,11 +433,10 @@ public Action HookPlayerDeath(Handle event, const char[] szName, bool dontBroadc
 	int iClient = GetClientOfUserId(GetEventInt(event, "userid"));
 	if (bOnDuel[iClient])
 	{
-		SetEntityRenderColor(iClient, 255, 255, 255, 255);
 		bOnDuel[iClient] = false;
 		for (int i = 1; i <= MaxClients; i++)
 		{
-			if (IsClientInGame(i) && IsPlayerAlive(i) && bOnDuel[i])
+			if (IsValidCl(i) && bOnDuel[i])
 			{
 				RequestFrame(XWin, i);
 				iInvite[i] = -1;
@@ -345,15 +450,19 @@ public Action HookPlayerDeath(Handle event, const char[] szName, bool dontBroadc
 
 public void XWin(int i)
 {
-	SetEntityRenderColor(i, 255, 255, 255, 255);
-	PrintToChatAll(" \x09>>\x01 %N выиграл дуэль.", i);
-	if (GIFT_MONEY)
+	if (IsValidCl(i))
 	{
-		PrintToChatAll(" \x09>>\x01 Он получил \x09$%i в награду!", GIFT_MONEY);
-		XGift(i, GIFT_MONEY);
+		PrintToChatAll(" \x09>>\x01 %N выиграл дуэль.", i);
+		SetEntityRenderColor(i, 255, 255, 255, 255);
+		if (GIFT_MONEY)
+		{
+			PrintToChatAll(" \x09>>\x01 Он получил \x09$%i в награду!", GIFT_MONEY);
+			XGift(i, GIFT_MONEY);
+		}
+		bOnDuel[i] = false;
+		
+		CS_RespawnPlayer(i);
 	}
-	bOnDuel[i] = false;
-	CS_RespawnPlayer(i);
 	//TeleportEntity(i, fT[i], NULL_VECTOR, NULL_VECTOR);
 }
 
@@ -396,9 +505,12 @@ void XGift(int i, int iMoney) {
 
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom){
 	
-	if (bOnDuel[victim] != bOnDuel[attacker])
+	if ((attacker<=MAXPLAYERS) && (victim<=MAXPLAYERS))
 	{
-		return Plugin_Handled;
+		if (((damagetype & DMG_BULLET) || (attacker!=inflictor)) && (bOnDuel[victim] != bOnDuel[attacker] || bOnDuel[victim]))
+		{
+			return Plugin_Handled;
+		}
 	}
 	return Plugin_Continue;
 }
