@@ -695,6 +695,8 @@ void StartDuel(int iClient, int iTarget)
 		PrintToChatAll(" \x09>>\x01 %N \x09VS. \x01%N!",iClient, iTarget);
 		CS_RespawnPlayer(iTarget);
 		CS_RespawnPlayer(iClient);
+		SetEntPropFloat(iTarget, Prop_Send, "m_flLaggedMovementValue", 0.0);
+		SetEntPropFloat(iClient, Prop_Send, "m_flLaggedMovementValue", 0.0);
 		TeleportEntity(iTarget, f1, NULL_VECTOR, NULL_VECTOR);
 		TeleportEntity(iClient, f2, NULL_VECTOR, NULL_VECTOR);
 		FakeClientCommand(iTarget, "use weapon_knife");
@@ -788,6 +790,7 @@ public void XWin(int i)
 		bOnDuel[i] = false;
 		
 		CS_RespawnPlayer(i);
+		SetEntPropFloat(i, Prop_Send, "m_flLaggedMovementValue", 1.0);
 		if (bNoThrowingKnives)
 		{
 			if(VIP_IsClientVIP(i))
@@ -839,7 +842,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 	
 	if ((attacker<=MAXPLAYERS) && (victim<=MAXPLAYERS))
 	{
-		if (((damagetype & DMG_BULLET) || (attacker!=inflictor)) && (bOnDuel[victim] != bOnDuel[attacker] || bOnDuel[victim]))
+		if ((!(damagetype & DMG_SLASH)) && (bOnDuel[victim] != bOnDuel[attacker] || bOnDuel[victim]))
 		{
 			return Plugin_Handled;
 		}
