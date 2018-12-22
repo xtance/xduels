@@ -58,7 +58,7 @@ public void OnPluginStart()
 	RegConsoleCmd("sm_d", XDuel, "Пригласить на дуэль");
 	RegAdminCmd("sm_dt", XDuelTest, ADMFLAG_ROOT, "Телепорт на место дуэли (1/2)");
 	RegAdminCmd("sm_dset", XDuelSpawn, ADMFLAG_ROOT, "Настроить спавны. Конфиг будет в /addons/sourcemod/configs/xduels.ini");
-	RegAdminCmd("sm_noduel", XNoduel, ADMFLAG_ROOT, "Запретить дуэли на один раунд. Используйте в других плагинах через ServerCommand!");
+	RegAdminCmd("sm_noduel", XNoDuel, ADMFLAG_ROOT, "Запретить дуэли на один раунд. Используйте в других плагинах через ServerCommand!");
 	HookEvent("round_start", RoundStart, EventHookMode_Post);
 	HookEvent("round_end", RoundEnd, EventHookMode_Post);
 	HookEvent("player_death", HookPlayerDeath, EventHookMode_Post);
