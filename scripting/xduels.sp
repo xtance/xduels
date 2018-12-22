@@ -141,7 +141,7 @@ public void OnMapStart()
 	}
 }
 
-public Action XNoduel(int iClient, int iArgs)
+public Action XNoDuel(int iClient, int iArgs)
 {
 	iDuels = iMax;
 	ReplyToCommand(iClient, ">> Дуэли отключены на раунд!");
