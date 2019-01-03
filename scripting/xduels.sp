@@ -4,21 +4,17 @@
 #include <sdkhooks>
 #include <autoexecconfig>
 
-#undef REQUIRE_PLUGIN
-#tryinclude <vip_core>
-#tryinclude <vip_fm>
-
 #pragma semicolon 1
 #pragma newdecls required
 
 
-int iInvite[MAXPLAYERS+1], iDuels, iInvis, iMode, iMax, iMoney, iHealth, iTime, iCount;
-bool bOnDuel[MAXPLAYERS+1], bNowDuel, bCanDuel, bNoThrowingKnives;
-float f1[3],f2[3],fEdit[3],fArena[3];
-char szMap[70];
+int iInvite[MAXPLAYERS+1], iWeapon[MAXPLAYERS+1], iDuels, iInvis, iMode, iMax, iMoney, iHealth, iTime, iCount, iWeaponsCount;
+bool bOnDuel[MAXPLAYERS+1], bNowDuel, bCanDuel;
+float f1[3],f2[3],fEdit[3],fArena[3],fDuelTime;
+char szMap[70],szWeapons[256],szWeaponsA[8][32];
 
-ConVar g_mode,g_blockvipcommands,g_max,g_money,g_nothrowingknives,g_health,g_time;
-
+ConVar g_mode,g_blockvipcommands,g_max,g_money,g_health,g_time,g_weapons,g_dueltime;
+Handle hTimerDuel;
 ArrayList aArena;
 
 public Plugin myinfo =
@@ -30,12 +26,6 @@ public Plugin myinfo =
 	url = "https://t.me/xtance"
 };
 
-public APLRes AskPluginLoad2(Handle hMySelf, bool bLate, char[] szError, int iErr_max)
-{
-	MarkNativeAsOptional("VIPFM_ToggleFeature");
-	MarkNativeAsOptional("VIP_IsClientVIP");
-	return APLRes_Success;
-}
 
 public void OnPluginStart()
 {
@@ -47,7 +37,8 @@ public void OnPluginStart()
 	g_time = AutoExecConfig_CreateConVar("xduels_time", "5", "Отсчёт до начала дуэли");
 	g_money = AutoExecConfig_CreateConVar("xduels_money", "0", "Сколько денег получит победитель");
 	g_blockvipcommands = AutoExecConfig_CreateConVar("xduels_blockvipcommands", "1", "Блокировать команды !vip !viptest !wp и ещё кучу других на арене (1/0)");
-	g_nothrowingknives = AutoExecConfig_CreateConVar("xduels_nothrowingknives", "0", "Отнимать функцию кидательных ножей. Только для VIP от R1KO. Требует : https://hlmod.ru/resources/vip-features-manager.756/ !!! (1/0)");
+	g_weapons = AutoExecConfig_CreateConVar("xduels_weapons", "weapon_knife,weapon_hammer,weapon_axe,weapon_fists", "Оружия вместо ножа. Если оружие одно, выбор не показывается. \nДоступно : weapon_knife,weapon_hammer,weapon_axe,weapon_fists");
+	g_dueltime = AutoExecConfig_CreateConVar("xduels_dueltime", "30.0", "Время дуэли в секундах, .0 в конце обязательно.");
 	AutoExecConfig_ExecuteFile();
 	
 	aArena = new ArrayList();
@@ -84,17 +75,25 @@ public void OnConfigsExecuted()
 		AddCommandListener(XNoVip,"sm_guns");
 		AddCommandListener(XNoVip,"sm_zeus");
 	}
-	bNoThrowingKnives = g_nothrowingknives.BoolValue;
 	iMode = g_mode.IntValue;
 	iMax = g_max.IntValue;
 	iMoney = g_money.IntValue;
 	iHealth = g_health.IntValue;
 	iTime = g_time.IntValue;
 	iCount = iTime;
+	fDuelTime = g_dueltime.FloatValue;
+	g_weapons.GetString(szWeapons,sizeof(szWeapons));
+	ReplaceString(szWeapons, sizeof(szWeapons), " ", "");
+	iWeaponsCount = ExplodeString(szWeapons, ",", szWeaponsA, sizeof(szWeaponsA), sizeof(szWeaponsA[]));
+	if (iWeaponsCount < 1)
+	{
+		SetFailState("[XDuels] No weapons in xduels_weapons (csgo/cfg/sourcemod/xduels.cfg)");
+	}
 }
 
 public Action RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
+	iCount = 0;
 	if (fArena[0] != 0.0 && fArena[1] != 0.0 && fArena[2] != 0.0)
 	{
 		CreateArena(fArena);
@@ -107,6 +106,11 @@ public Action RoundStart(Event event, const char[] name, bool dontBroadcast)
 			SetEntityRenderColor(i, 255, 255, 255, 255);
 			bOnDuel[i] = false;
 		}
+	}
+	if(hTimerDuel != INVALID_HANDLE)
+	{
+		KillTimer(hTimerDuel);
+		hTimerDuel = INVALID_HANDLE;
 	}
 	bNowDuel = false;
 }
@@ -232,7 +236,7 @@ public Action XDuel(int iClient, int iArgs)
 	}
 	iInvite[iClient] = StringToInt(szTarget);
 	int iTarget = iInvite[iClient];
-	StartDuel(iClient, iTarget);
+	StartDuel(iTarget, iClient);
 	return Plugin_Handled;
 }
 
@@ -249,7 +253,48 @@ public int hduel(Menu mduel, MenuAction action, int param1, int param2)
 			int iSomeone;
 			iSomeone = StringToInt(item);
 			iInvite[param1] = iSomeone;
-			StartDuel(param1, iSomeone);
+			if (iWeaponsCount > 1)
+			{
+				Menu mweapons = new Menu(hweapons, MenuAction_Cancel);
+				mweapons.SetTitle(">> Выберите оружие :");
+				char szWeaponName[32], szInt[8];
+				for (int x = 0; x < iWeaponsCount; x++)
+				{
+					szWeaponName = szWeaponsA[x];
+					IntToString(x, szInt, sizeof(szInt));
+					ReplaceString(szWeaponName, sizeof(szWeaponName), "weapon_", "");
+					mweapons.AddItem(szInt, szWeaponName);
+				}
+				mweapons.Display(param1, MENU_TIME_FOREVER);
+			}
+			else
+			{
+				StartDuel(param1, iInvite[param1]);
+			}
+		}
+	}
+	return 0;
+}
+
+public int hweapons(Menu mweapons, MenuAction action, int param1, int param2)
+{
+	switch (action)
+	{
+		case MenuAction_Select:
+		{
+			char item[32];
+			mweapons.GetItem(param2, item, sizeof(item));
+			char szWeaponName[32];
+			if (StringToInt(item) < iWeaponsCount)
+			{
+				iWeapon[param1] = StringToInt(item);
+				szWeaponName = szWeaponsA[StringToInt(item)];
+				StartDuel(param1, iInvite[param1]);
+			}
+			else
+			{
+				PrintToChat(param1, " \x02>>\x01 Произошёл фейл.");
+			}
 		}
 	}
 	return 0;
@@ -635,8 +680,14 @@ public void OnClientPostAdminCheck(int iClient)
 }
 bool IsValidCl(int i)
 {
-	if (IsClientInGame(i) && (GetClientTeam(i) > 1) && (1<=i<=MAXPLAYERS) && !IsFakeClient(i))
-		return true;
+	if (i>0)
+	{
+		if (IsClientInGame(i) && (GetClientTeam(i) > 1) && (1<=i<=MAXPLAYERS) && !IsFakeClient(i))
+		{
+			return true;
+		}
+		else return false;
+	}
 	else return false;
 }
 
@@ -699,26 +750,42 @@ void StartDuel(int iClient, int iTarget)
 		SetEntPropFloat(iClient, Prop_Send, "m_flLaggedMovementValue", 0.0);
 		TeleportEntity(iTarget, f1, NULL_VECTOR, NULL_VECTOR);
 		TeleportEntity(iClient, f2, NULL_VECTOR, NULL_VECTOR);
-		FakeClientCommand(iTarget, "use weapon_knife");
-		FakeClientCommand(iClient, "use weapon_knife");
+		int z;
+		if (iWeaponsCount > 1)
+		{
+			z = iWeapon[iClient];
+		}
+		else
+		{
+			z = 0;
+		}
+		int iNewWeapon;
+		RemoveSlot3(iClient);
+		RemoveSlot3(iTarget);
+		iNewWeapon = GivePlayerItem(iClient, szWeaponsA[z]);
+		EquipPlayerWeapon(iClient, iNewWeapon);
+		iNewWeapon = GivePlayerItem(iTarget, szWeaponsA[z]);
+		EquipPlayerWeapon(iTarget, iNewWeapon);
+		FakeClientCommand(iClient, "use %s",szWeaponsA[z]);
+		FakeClientCommand(iTarget, "use %s",szWeaponsA[z]);
 		SetEntityRenderColor(iClient, 255, 0, 0, 255);
 		SetEntityRenderColor(iTarget, 0, 255, 0, 255);
-		if (bNoThrowingKnives)
-		{
-			if(VIP_IsClientVIP(iClient))
-			{
-				VIPFM_ToggleFeature(iClient, false, "ThrowingKnives");
-			}
-			if(VIP_IsClientVIP(iTarget))
-			{
-				VIPFM_ToggleFeature(iTarget, false, "ThrowingKnives");
-			}
-		}
 		bNowDuel = true;
 		iDuels++;
 		bOnDuel[iClient] = true;
 		bOnDuel[iTarget] = true;
+		iCount = iTime;
 		CreateTimer(1.0, Timer_GetReady, _, TIMER_REPEAT);
+	}
+}
+
+void RemoveSlot3(int i)
+{
+	int iKnife;
+	while((iKnife = GetPlayerWeaponSlot(i, CS_SLOT_KNIFE)) != -1)
+	{
+		RemovePlayerItem(i, iKnife);
+		AcceptEntityInput(iKnife, "Kill");
 	}
 }
 
@@ -736,6 +803,7 @@ public Action Timer_GetReady(Handle timer)
 				SetEntPropFloat(i, Prop_Send, "m_flLaggedMovementValue", 1.0);
 			}
 		}
+		hTimerDuel = CreateTimer(fDuelTime, Timer_Duel);
 		return Plugin_Stop;
 	}
 	
@@ -756,6 +824,23 @@ public Action Timer_GetReady(Handle timer)
 	return Plugin_Continue;
 }
 
+public Action Timer_Duel(Handle timer)
+{
+	if (bNowDuel)
+	{
+		for (int i = 1; i <= MaxClients; i++)
+		{
+			if ((bOnDuel[i]) && IsPlayerAlive(i))
+			{
+				bOnDuel[i] = false;
+				ForcePlayerSuicide(i);
+				PrintToChatAll(" \x03>>\x01 Игрок \x03%N\x01 был убит за задержку дуэли!",i);
+			}
+		}
+	}
+	hTimerDuel = INVALID_HANDLE;
+}
+
 public Action HookPlayerDeath(Handle event, const char[] szName, bool dontBroadcast)
 {
 	int iClient = GetClientOfUserId(GetEventInt(event, "userid"));
@@ -772,6 +857,11 @@ public Action HookPlayerDeath(Handle event, const char[] szName, bool dontBroadc
 		}
 		bNowDuel = false;
 		iInvite[iClient] = -1;
+		if(hTimerDuel != INVALID_HANDLE)
+		{
+			KillTimer(hTimerDuel);
+			hTimerDuel = INVALID_HANDLE;
+		}
 	}
 	return Plugin_Continue;
 }
@@ -788,16 +878,12 @@ public void XWin(int i)
 			XGift(i, iMoney);
 		}
 		bOnDuel[i] = false;
-		
+		if (iWeaponsCount > 1)
+		{
+			RemoveSlot3(i);
+		}
 		CS_RespawnPlayer(i);
 		SetEntPropFloat(i, Prop_Send, "m_flLaggedMovementValue", 1.0);
-		if (bNoThrowingKnives)
-		{
-			if(VIP_IsClientVIP(i))
-			{
-				VIPFM_ToggleFeature(i, true, "ThrowingKnives");
-			}
-		}
 	}
 }
 
@@ -839,10 +925,11 @@ void XGift(int i, int fAddMoney) {
 }
 
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom){
-	
+	//PrintToConsoleAll("%N -- %i",attacker,damagetype);
+	//4224 = weapon_fists damagetype (DMG_CLUB)
 	if ((attacker<=MAXPLAYERS) && (victim<=MAXPLAYERS))
 	{
-		if ((!(damagetype & DMG_SLASH)) && (bOnDuel[victim] != bOnDuel[attacker] || bOnDuel[victim]))
+		if ((!(damagetype & (DMG_SLASH | DMG_CLUB))) && (bOnDuel[victim] != bOnDuel[attacker] || bOnDuel[victim]))
 		{
 			return Plugin_Handled;
 		}
