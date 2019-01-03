@@ -837,6 +837,7 @@ public Action Timer_Duel(Handle timer)
 				PrintToChatAll(" \x03>>\x01 Игрок \x03%N\x01 был убит за задержку дуэли!",i);
 			}
 		}
+		bNowDuel = false;
 	}
 	hTimerDuel = INVALID_HANDLE;
 }
