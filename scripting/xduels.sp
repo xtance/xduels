@@ -37,7 +37,7 @@ public void OnPluginStart()
 	g_time = AutoExecConfig_CreateConVar("xduels_time", "5", "Отсчёт до начала дуэли");
 	g_money = AutoExecConfig_CreateConVar("xduels_money", "0", "Сколько денег получит победитель");
 	g_blockvipcommands = AutoExecConfig_CreateConVar("xduels_blockvipcommands", "1", "Блокировать команды !vip !viptest !wp и ещё кучу других на арене (1/0)");
-	g_weapons = AutoExecConfig_CreateConVar("xduels_weapons", "weapon_knife,weapon_hammer,weapon_axe,weapon_fists", "Оружия вместо ножа. Если оружие одно, выбор не показывается. \nДоступно : weapon_knife,weapon_hammer,weapon_axe,weapon_fists");
+	g_weapons = AutoExecConfig_CreateConVar("xduels_weapons", "weapon_knife,weapon_hammer,weapon_axe,weapon_fists,weapon_spanner", "Оружия вместо ножа. Если оружие одно, выбор не показывается.");
 	g_dueltime = AutoExecConfig_CreateConVar("xduels_dueltime", "30.0", "Время дуэли в секундах, .0 в конце обязательно.");
 	AutoExecConfig_ExecuteFile();
 	
